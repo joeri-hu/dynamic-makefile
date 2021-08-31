@@ -1,0 +1,377 @@
+# Dynamic makefile for Windows systems
+#
+# File:     makefile
+# Version:  0.6
+#
+# Author:   Joeri Kok
+# Date:     February 2021
+#
+# Description:
+#   Generates makefile recipes for Windows systems by
+#   resolving file-header inclusion-dependencies recursively.
+#
+# To-do:
+#   - Cross-platform support by writing platform specific functions
+#     or by incorporating the -MMD and -MP flags in some way
+#
+
+OUT_FILE := editor.exe
+
+SRC_DIR   := ./src
+BUILD_DIR := ./build
+
+# target file extensions
+SRC_EXT := cpp
+OBJ_EXT := o
+
+# external libraries
+TOOL_DIR := d:/arduino
+SFML_DIR := $(TOOL_DIR)/sfml-2.5.1
+SFML_INC := $(SFML_DIR)/include
+SFML_LIB := $(SFML_DIR)/lib/x64
+
+# tooling locations for targeting specific architectures
+#
+# CPP_DIR  := $(TOOL_DIR)/i686-7.3.0-release-posix-dwarf-rt_v5-rev0
+# MAKE_DIR := $(TOOL_DIR)/avr-gcc-9.2.0-x86-mingw/avr-gcc-9.2.0-x86-mingw/bin
+#
+# CPP_DIR_X86  := $(CXX_DIR)/mingw32/bin
+# MAKE_DIR_X86 := $(TOOL_DIR)/avr-gcc-9.2.0-x86-mingw/avr-gcc-9.2.0-x86-mingw/bin
+#
+# CPP_DIR_X64  := $(CXX_DIR)/mingw64/bin
+# MAKE_DIR_X64 := c:/program files/avr-gcc-10.1.0-x64-windows/bin
+
+# static libraries
+SFML_STL := -lsfml-main -lsfml-graphics-s -lsfml-window-s -lsfml-system-s
+WIN_STL  := -lgdi32 -lopengl32 -lws2_32 -lwinmm -lfreetype
+
+# global macros
+MACROS := SFML_STATIC
+
+# general compiler flags
+# note: to hide the console window, add the following flag: -mwindows
+# note: the -Wno-parentheses is added due to compiler bug #94505
+#       and can be omitted from GCC version 9.4 and onwards, see also:
+#       https://gcc.gnu.org/bugzilla/show_bug.cgi?id=94505
+CPPFLAGS := -std=c++17 -pedantic -Wall -Wextra -Werror -Wno-parentheses -D $(MACROS)
+CPP := g++
+
+# additional compiler flags
+FINAL_FLAG := -Ofast
+INC_FLAGS  := -I $(SFML_INC)
+LIB_FLAGS  := -L $(SFML_LIB)
+STL_FLAGS  := $(SFML_STL) $(WIN_STL)
+
+# replace forward slashes with backslashes and vice versa
+to_win_path = $(subst /,\,$1)
+to_unx_path = $(subst \,/,$1)
+
+# add and remove quotes
+add_qts = $(patsubst %,"%",$1)
+strip_qts = $(subst ",,$1) #") # fixes a markup issue with the editor
+
+# create a directory if it doesn't exists (windows shell)
+make_dir = if not exist "$1" mkdir "$1"
+
+# search string for finding header inclusions
+find_qry = \#include
+
+# find all lines starting with '#include "' (note the double quote)
+# and strip the preprocessor prefix, only keeping the file names in quotes
+find_incs_impl = $(filter-out %$(find_qry),$(shell findstr 2>nul -bic:"$(find_qry) "^\" "$1"))
+
+# convert the file path to a windows path, find all includes, strip any quotes,
+# and convert the result back to a unix compatible path
+find_incs = $(call to_unx_path,$(call strip_qts,$(call find_incs_impl,$(call to_win_path,$1))))
+
+# find all file-header dependencies of a given source file recursively 
+rfind_deps = $1 $(strip $(foreach r,$(call find_incs,$1),$(call rfind_deps,$(dir $1)$r)))
+
+# slight alteration of recursive wildcard function: https://stackoverflow.com/a/12959764
+rwildcard = $(wildcard $1$2) $(strip $(foreach d,$(wildcard $1*),$(call rwildcard,$d/,$2)))
+
+# find all source files within the source directory recursively
+# and strip the source directory and file extension
+targets := $(basename $(subst $(SRC_DIR)/,,$(call rwildcard,$(SRC_DIR)/,*.$(SRC_EXT))))
+
+# add the object file extension to the targets and add the build directory
+objects := $(addprefix $(BUILD_DIR)/,$(addsuffix .$(OBJ_EXT),$(targets)))
+
+# generate the prerequisites by finding all file-header dependencies recursively,
+# create the corresponding build directory if necessary and invoke the compiler
+define create_target_recipe
+    $(BUILD_DIR)/$1.$(OBJ_EXT): $(call rfind_deps,$(SRC_DIR)/$1.$(SRC_EXT))
+		@$$(call make_dir,$$(dir $$@))
+		$(CPP) $$(CPPFLAGS) -c $$< $(INC_FLAGS) -o $$@
+endef
+
+build: $(objects)
+	$(CPP) $(CPPFLAGS) $^ -o $(OUT_FILE) $(LIB_FLAGS) $(STL_FLAGS)
+
+final: CPPFLAGS += $(FINAL_FLAG)
+final: clean build
+
+clean:
+	del $(call add_qts,$(call to_win_path,$(objects)))
+
+# iterate through the targets and create a recipe for each of them
+$(foreach target,$(targets),$(eval $(call create_target_recipe,$(target))))
+
+.PHONY: build final clean
+
+
+# # extract file names from all CPP files within the SRC_DIR directory
+# # and replace the .cpp extensions with .o
+# targets2 := $(patsubst %.$(SRC_EXT),%.o,$(notdir $(wildcard $(SRC_DIR)/*.$(SRC_EXT))))
+
+# $(info $(targets2))
+
+# subdirs := $(wildcard */)
+# sources := $(wildcard $(addsuffix *.cpp,$(subdirs)))
+# objects := $(patsubst %.cpp,%.o,$(sources))
+
+# $(info $(objects))
+
+# another := $(wildcard *.cpp) $(wildcard **/*.cpp)
+
+# $(info $(another))
+
+$(info ----- start -----)
+
+
+
+
+
+# # How to recursively find all files that match a pattern
+# ALL_CPPS := $(call rwildcard,$(SRC_DIR)/,*.cpp)
+# # ALL_CPPS := $(wildcard $1$2) $(foreach d,$(wildcard $1*),$(call rwildcard,$d/,$2))
+
+# targets2 := $(subst $(SRC_DIR),$(BUILD_DIR),$(patsubst %.$(SRC_EXT),%.o,$(call rwildcard,$(SRC_DIR)/,*.$(SRC_EXT))))
+
+
+
+
+
+
+$(info ----- debug - targets -----)
+$(info $(targets))
+$(info ----- debug - objects -----)
+$(info $(objects))
+
+# null :=
+# space := ${null} ${null}
+# ${space} := ${space}# ${ } is a space. Neat huh?
+
+# define \n
+
+
+# endef
+
+# # $(info [$(subst ${ },${\n},${ALL_CPPS})])
+
+# $(info $(ALL_CPPS))
+# $(info $(targets2))
+# $(info ---------------------------)
+# $(info $(targets))
+# $(info ---------------------------)
+# $(info $(target_objs))
+# $(info ---------------------------)
+# $(info $(subst /,\,$(target_objs)))
+# $(info ---------------------------)
+
+# stop:
+
+# $(info ----- step1 -----)
+# $(info $(wildcard ./src*.cpp) | $(wildcard ./src*))
+# $(info ----- step2 -----)
+# $(info $(wildcard ./src/*.cpp) | $(wildcard ./src/*))
+# $(info ----- step3 -----)
+# $(info $(wildcard ./src/mysrc1.cpp*) $(wildcard ./src/core*) $(wildcard ./src/mysrc1.cpp*))
+# $(info ----- step4 -----)
+# $(info $(wildcard ./src/mysrc1.cpp/*) $(wildcard ./src/core/*) $(wildcard ./src/mysrc1.cpp/*))
+
+# search through the CPP and HPP file specified by the $1 (first) argument and
+# only return the strings that start with '#include "' (note the double quote)
+source2 = $(SRC_DIR)\a.$(SRC_EXT)
+header2 = $(HDR_DIR)\a.$(HDR_EXT)
+find_includes2 = findstr 2>nul -bic:"\#include "^" "$(source2)" "$(header2)"
+
+# for every header file found, add the corresponding
+# TPP file (template definition), if it exists
+add_tpl_files2 = (echo %%~nxe & if exist "%%~ne.$(TPL_EXT)" echo %%~ne.$(TPL_EXT))
+
+# walk through the output of the find_includes command, returning the 2nd token
+# delimited by double quotes while only keeping the file name and extension
+find_dependencies2 = for Qf tokens^=2^ delims^=^" %%e in ('$(find_includes2)') do $(add_tpl_files2)
+
+# $(info ----- debug - shell -----)
+# $(info $(shell $(subst Q,/,$(subst /,\,$(find_dependencies2)))))
+$(info ----- debug - shell2 -----)
+
+testf = $(shell echo ERROR $2 --- $1)
+
+# $(info $(find_includes2))
+# stuff := $(shell $(subst /,\,$(find_includes2)))
+# res = $(foreach hdr,$(stuff),$(lastword $(hdr)))
+new_cmd = $(addprefix $(SRC_DIR)/,$(patsubst "%",%,$(filter-out %\#include,$(shell $(subst /,\,$(find_includes2))))))
+
+somef = $(info msg: $(1))
+
+$(info $(new_cmd))
+# $(info $(shell cmd /v:on /c echo !time!))
+# $(info $(call testf,msg1,msg2))
+
+$(info ----- continue -----)
+
+doe = bla1 bla2 bla3
+
+$(call somef,$(doe))
+
+# ) # quiting makefile early
+
+# search through the CPP and HPP file specified by the $1 (first) argument and
+# only return the strings that start with '#include "' (note the double quote)
+
+# find_includes = findstr 2>nul -bic:"\#include "^" "$(source)" "$(header)"
+
+# for every header file found, add the corresponding
+# TPP file (template definition), if it exists
+# add_tpl_files = (echo %%~nxe & if exist "%%~ne.$(TPL_EXT)" echo %%~ne.$(TPL_EXT))
+
+# walk through the output of the find_includes command, returning the 2nd token
+# delimited by double quotes while only keeping the file name and extension
+# find_dependencies = for Qf tokens^=2^ delims^=^" %%e in ('$(find_includes)') do $(add_tpl_files)
+
+# $(shell $(subst Q,/,$(subst /,\,$(find_dependencies))))
+# $(lastword $(shell $(subst /,\,$(find_includes))))
+# $(addprefix $(SRC_DIR)/,$(subst ",,$(filter-out %\#include,$(shell $(subst /,\,$(find_includes))))))
+		# mkdir $$(subst /,\,$$(dir $$@)) 2>nul
+    # myvar := $(call testf,bla1,$1)
+
+# ./src
+# ./src/a.cpp
+# ./src/a.hpp
+
+# search string for finding header inclusions
+find_qry = \#include
+# criteria = $(marker) "^
+
+# src_file = $(SRC_DIR)\$1.$(SRC_EXT)
+# hdr_file = $(HDR_DIR)\$1.$(HDR_EXT)
+
+to_win_path = $(subst /,\,$1)
+to_unx_path = $(subst \,/,$1)
+
+add_qts = $(patsubst %,"%",$1)
+strip_qts = $(subst ",,$1) #") # fixes a markup issue with the editor
+
+# bla = $(filter-out %$(qry),$(shell findstr 2>nul -bic:"$(qry) "^\" $(call to_win_path,$1)))
+
+find_incs_impl = $(filter-out %$(find_qry),$(shell findstr 2>nul -bic:"$(find_qry) "^\" "$1"))
+
+find_incs = $(call to_unx_path,$(call strip_qts,$(call find_incs_impl,$(call to_win_path,$1))))
+
+# find_incs_fmt = $(call to_unx_path,$(call strip_qts,$(filter-out %$(qry),$(shell findstr 2>nul -bic:"$(qry) "^\" $(call to_win_path,$1)))))
+# find_incs_fmt = $(call to_unx_path,$(call strip_qts,$(filter-out %$(qry),$(shell findstr 2>nul -bic:"$(qry) "^\" $(call to_win_path,$1)))))
+
+# find_incs = $(subst \,/,$(subst ",,$(filter-out %$(qry),$(shell findstr 2>nul -bic:"$(qry) "^\" $(subst /,\,$1)))))
+
+
+
+
+# $(info $(call find_incs,./src/a.cpp))
+
+# # rwildcard = $(wildcard $1$2) $(strip $(foreach d,$(wildcard $1*),$(call rwildcard,$d/,$2)))
+
+# rfind_deps = $1 $(strip $(foreach r,$(call find_incs,$1),$(call rfind_deps,$(call to_win_path,.\src\$r))))
+
+# rfind_deps = $1 $(strip $(foreach r,$(call find_incs,$1),$(call rfind_deps,./src/$r)))
+# rfind_deps = $1 $(strip $(foreach r,$(call find_incs,$1)$(warning $1),$(call rfind_deps,$(dir $1)$r)))
+rfind_deps = $1 $(strip $(foreach r,$(call find_incs,$1),$(call rfind_deps,$(dir $1)$r)))
+
+
+# rfind_deps = $1 $(strip $(foreach r,$(call find_incs,$1),$(call rfind_deps,$(call to_win_path,$(dir $(call to_unx_path,$1)$r)))))
+
+
+# # src/a
+# # src/core/c
+
+# ./src/a.cpp:
+# 	a.hpp             --> ./src/a.hpp
+# 	core/b.hpp        --> ./src/core/b.hpp
+# 	core/yet/d.hpp    --> ./src/core/yet/d.hpp
+
+# ./src/a.hpp:
+# 	-
+
+# ./src/core/b.hpp:
+# 	nope.hpp          --> ./src/a.hpp
+
+
+
+
+# # a.hpp b.hpp
+# rfind_incs = $1 $(strip $(foreach r,$(call find_incs,$(call to_win_path,.\src\$1)),$(call rfind_incs,$r)))
+
+# # src_file := $(call to_win_path,$(SRC_DIR)\$1.$(SRC_EXT))
+# # hdr_file := $(call to_win_path,$(HDR_DIR)\$1.$(HDR_EXT))
+
+# src_file := $(call to_win_path,$(SRC_DIR)\a.$(SRC_EXT))
+# hdr_file := $(call to_win_path,$(HDR_DIR)\a.$(HDR_EXT))
+
+# $(info $(call strip_qts,$(call find_incs,$(src_file) $(hdr_file))))
+
+# $(info $(call rfind_deps,$(src_file) $(hdr_file)))
+# $(info $(call rfind_deps,$(SRC_DIR)/core/c.$(SRC_EXT)))
+
+# $(info $(call rfind_incs,$(SRC_DIR)\a.$(SRC_EXT) $(HDR_DIR)\a.$(HDR_EXT)))
+
+# ) # eof
+
+    # myvar := $$(call testf,bla1,$1)
+    # $$(info weird order: $$(myvar))
+    # $(info $(shell echo $(myvar)))
+    # # why this no work?
+
+# $(info $(BUILD_DIR)/$1.$(OBJ_EXT): $(SRC_DIR)/$1.$(SRC_EXT) $(addprefix $(SRC_DIR)/,$(filter-out %#include,$(shell $(subst /,\,$(find_includes))))))
+  #   $(BUILD_DIR)/$1.$(OBJ_EXT): $(SRC_DIR)/$1.$(SRC_EXT) a.hpp
+		# echo $(CPP) $(CPPFLAGS) -c $$< $(INC_FLAGS) -o $$@
+
+# mkdir 2>nul "$$(call to_win_path,$$(dir $$@))"&(call;)
+	# $$(warning dbg: mkdir 2>nul "$$(call to_win_path,$$(dir $$@))")
+
+# $(info $(BUILD_DIR)/$1.$(OBJ_EXT): $(call rfind_deps,$(SRC_DIR)/$1.$(SRC_EXT)))
+
+make_dir = if not exist "$1" mkdir "$1"
+
+	# @mkdir 2>nul "$$(dir $$@)" & (call;)
+
+# creates a recipe for a target based on the 1st argument it receives and runs
+# the find_dependencies command to look for all of the included header files
+# note: the command '(call;)' is invoked to reset 
+define create_target_recipe
+    $(BUILD_DIR)/$1.$(OBJ_EXT): $(call rfind_deps,$(SRC_DIR)/$1.$(SRC_EXT))
+		@$$(call make_dir,$$(dir $$@))
+		$(CPP) $$(CPPFLAGS) -c $$< $(INC_FLAGS) -o $$@
+endef
+
+final: CPPFLAGS += $(FINAL_FLAG)
+final: clean build
+
+# make_build_dirs = @for %%e in ($(call add_qts,$(dir $1))) do if not exist %%e mkdir %%e
+# for %%e in ($(call add_qts,$(dir $^))) do @echo new obj: %%e
+# @for %%e in ($(call add_qts,$(dir $^))) do if not exist %%e mkdir %%e
+
+build: $(objects)
+	$(CPP) $(CPPFLAGS) $^ -o $(OUT_FILE) $(LIB_FLAGS) $(STL_FLAGS)
+
+
+# echo $(CPP) $(CPPFLAGS) $^ -o $(OUT_FILE) $(LIB_FLAGS) $(STL_FLAGS)
+
+clean:
+	del $(call add_qts,$(call to_win_path,$(objects)))
+
+# iterate through all the targets found and create a recipe for each of them
+$(foreach target,$(targets),$(eval $(call create_target_recipe,$(target))))
+
+.PHONY: final build clean
