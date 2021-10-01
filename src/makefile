@@ -6,6 +6,8 @@
 # Author:   Joeri Kok
 # Date:     May 2021
 #
+# Origin:   github.com/joeri-hu/dynamic-makefile
+#
 # Description:
 #   Generates makefile recipes by resolving file-header inclusions recursively.
 #
@@ -115,13 +117,13 @@ clean:
 build: $(objects)
 	$(CPP) $(CPPFLAGS) $(MACRO_FLAGS) $(LIB_FLAGS) $(STL_FLAGS) $^ -o $(OUT_FILE)
 
-final: CPPFLAGS += $(FIN_FLAG)
+final: CPPFLAGS += $(FIN_FLAGS)
 final: clean build
 
 run:
 	./$(basename $(OUT_FILE))
 
-# create a recipe for every target
+# dynamically generate the required recipes
 $(foreach target,$(targets),$(eval $(call createrecipe,$(target))))
 
 .PHONY: clean build final run
